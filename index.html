@@ -2,130 +2,107 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Stealth Multiplayer</title>
-    <script src="https://unpkg.com/playroomkit/multiplayer.js"></script>
+    <title>Stealth Multiplayer Fix</title>
+    <script src="https://unpkg.com/playroomkit@0.0.12/multiplayer.js"></script>
     <style>
         body { margin: 0; overflow: hidden; background: #050505; font-family: sans-serif; }
         canvas { display: block; }
         #hud {
             position: absolute; top: 20px; left: 20px; color: white;
             background: rgba(0,0,0,0.8); padding: 15px; border-radius: 8px;
-            pointer-events: none; border-left: 5px solid #3498db;
+            z-index: 100;
         }
     </style>
 </head>
 <body>
 
 <div id="hud">
-    <div style="color: #f1c40f; font-weight: bold;">СТАТУС: <span id="st">ПОДКЛЮЧЕНИЕ...</span></div>
-    <div>HP: <span id="hp">100</span></div>
+    <div style="color: #f1c40f; font-weight: bold;">СТАТУС: <span id="st">ИНИЦИАЛИЗАЦИЯ...</span></div>
     <div>ИГРОКОВ: <span id="pc">0</span></div>
 </div>
 
 <script>
-const canvas = document.createElement('canvas');
-const ctx = canvas.getContext('2d');
-document.body.appendChild(canvas);
-
-function resize() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-}
-window.onresize = resize;
-resize();
-
-let players = [];
-let ruins = [];
-const keys = {};
-
-// Функция запуска
+// Чтобы избежать ошибок, проверяем наличие объекта Playroom
 async function start() {
-    try {
-        // Проверка библиотеки
-        if (typeof Playroom === "undefined") {
-            setTimeout(start, 500);
-            return;
-        }
+    const statusEl = document.getElementById('st');
+    
+    if (typeof Playroom === "undefined") {
+        statusEl.innerText = "ОШИБКА: БИБЛИОТЕКА НЕ НАЙДЕНА";
+        console.error("Playroom is not defined. Проверьте интернет или блокировщики.");
+        return;
+    }
 
+    try {
+        statusEl.innerText = "ПОДКЛЮЧЕНИЕ К СЕРВЕРУ...";
+        
         // Вход в игру
         await Playroom.insertCoin();
-        document.getElementById('st').innerText = "В СЕТИ";
+        statusEl.innerText = "В СЕТИ";
 
-        // Генерация карты (только для Хоста)
+        // Если мы главные (Хост) - создаем карту
         if (Playroom.isHost()) {
-            let map = [];
-            for(let i=0; i<15; i++) {
-                map.push({
-                    x: Math.random() * (window.innerWidth - 100),
-                    y: Math.random() * (window.innerHeight - 100),
-                    w: 100, h: 100
-                });
-            }
-            Playroom.setState("map", map, true);
+            Playroom.setState("map", [{x: 200, y: 200, w: 100, h: 100}], true);
         }
 
-        // Когда заходит игрок
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        document.body.appendChild(canvas);
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        let players = [];
+        const keys = {};
+
+        // Следим за игроками
         Playroom.onPlayerJoin((state) => {
             const p = { state, id: state.id, color: state.getProfile().color.hex };
             state.setState("pos", {x: 100, y: 100});
-            state.setState("angle", 0);
             players.push(p);
             state.onQuit(() => players = players.filter(pl => pl.id !== state.id));
         });
 
-        loop();
-    } catch (e) {
-        console.error(e);
-    }
-}
+        window.onkeydown = e => keys[e.code] = true;
+        window.onkeyup = e => keys[e.code] = false;
 
-// Управление
-window.onkeydown = e => keys[e.code] = true;
-window.onkeyup = e => keys[e.code] = false;
+        function gameLoop() {
+            // Движение
+            const me = Playroom.myPlayer();
+            if (me) {
+                let pos = me.getState("pos") || {x: 100, y: 100};
+                if(keys['KeyW']) pos.y -= 4; if(keys['KeyS']) pos.y += 4;
+                if(keys['KeyA']) pos.x -= 4; if(keys['KeyD']) pos.x += 4;
+                me.setState("pos", pos);
+            }
 
-function loop() {
-    const me = Playroom.myPlayer();
-    if (me) {
-        let pos = me.getState("pos") || {x: 100, y: 100};
-        if(keys['KeyW']) pos.y -= 3;
-        if(keys['KeyS']) pos.y += 3;
-        if(keys['KeyA']) pos.x -= 3;
-        if(keys['KeyD']) pos.x += 3;
-        me.setState("pos", pos);
-    }
+            // Отрисовка
+            ctx.fillStyle = '#1e272e';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    draw();
-    requestAnimationFrame(loop);
-}
+            players.forEach(p => {
+                const pos = p.state.getState("pos");
+                if (pos) {
+                    ctx.fillStyle = p.color;
+                    ctx.beginPath();
+                    ctx.arc(pos.x, pos.y, 20, 0, Math.PI*2);
+                    ctx.fill();
+                    ctx.fillStyle = "white";
+                    ctx.fillText(p.state.getProfile().name, pos.x - 20, pos.y - 30);
+                }
+            });
 
-function draw() {
-    ctx.fillStyle = '#1e272e';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // Рисуем стены
-    ruins = Playroom.getState("map") || [];
-    ctx.fillStyle = "#0a0a0a";
-    ruins.forEach(r => ctx.fillRect(r.x, r.y, r.w, r.h));
-
-    // Рисуем игроков
-    players.forEach(p => {
-        const pos = p.state.getState("pos");
-        if (pos) {
-            ctx.fillStyle = p.color;
-            ctx.beginPath();
-            ctx.arc(pos.x, pos.y, 15, 0, Math.PI*2);
-            ctx.fill();
-            
-            // Имя игрока
-            ctx.fillStyle = "white";
-            ctx.fillText(p.state.getProfile().name, pos.x - 20, pos.y - 25);
+            document.getElementById('pc').innerText = players.length;
+            requestAnimationFrame(gameLoop);
         }
-    });
+        gameLoop();
 
-    document.getElementById('pc').innerText = players.length;
+    } catch (err) {
+        statusEl.innerText = "ОШИБКА СЕТИ";
+        console.error(err);
+    }
 }
 
-start();
+// Запуск при загрузке страницы
+window.onload = start;
 </script>
 </body>
 </html>
