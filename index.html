@@ -3,101 +3,101 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Моя Мультиплеер Игра</title>
-    <script src="https://cdn.jsdelivr.net/npm/playroomkit@1.2.11/dist/multiplayer.js"></script>
+    <title>Multiplayer Game</title>
     <style>
-        body { margin: 0; background: #111; color: white; font-family: sans-serif; overflow: hidden; }
-        canvas { display: block; }
-        #ui { position: absolute; top: 10px; left: 10px; pointer-events: none; z-index: 10; }
-        .stat { background: rgba(0,0,0,0.5); padding: 5px 10px; border-radius: 5px; margin-bottom: 5px; }
+        body { margin: 0; background: #111; color: white; font-family: sans-serif; overflow: hidden; display: flex; align-items: center; justify-content: center; height: 100vh; }
+        canvas { display: none; position: absolute; top: 0; left: 0; }
+        #loading-screen { text-align: center; z-index: 100; }
+        .spinner { border: 4px solid rgba(255,255,255,0.1); border-left-color: #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 10px auto; }
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
 
-    <div id="ui">
-        <div class="stat" id="status">Подключение...</div>
-        <div class="stat" id="playerCount">Игроков: 0</div>
+    <div id="loading-screen">
+        <div class="spinner"></div>
+        <div id="status">ЗАГРУЗКА БИБЛИОТЕК...</div>
     </div>
+
     <canvas id="gameCanvas"></canvas>
 
-<script>
-async function init() {
-    const statusText = document.getElementById('status');
-    const playerCountText = document.getElementById('playerCount');
-    const canvas = document.getElementById('gameCanvas');
-    const ctx = canvas.getContext('2d');
+    <script src="https://unpkg.com/playroomkit@1.2.11/dist/multiplayer.js"></script>
 
-    // Настройка размера экрана
-    function resize() {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-    }
-    window.onresize = resize;
-    resize();
+    <script>
+    // Главная функция игры
+    async function start() {
+        const statusText = document.getElementById('status');
+        const loadingScreen = document.getElementById('loading-screen');
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
 
-    try {
-        // Запуск мультиплеера
-        // skipLobby: false заставит игру показать окно выбора имени и цвета
-        await Playroom.insertCoin({ skipLobby: false });
-        statusText.innerText = "В СЕТИ";
-        statusText.style.color = "#2ecc71";
+        try {
+            statusText.innerText = "ПОДКЛЮЧЕНИЕ К СЕТИ...";
+            
+            // Запуск Playroom
+            await Playroom.insertCoin();
+            
+            // Если мы здесь, значит всё ок. Прячем загрузку, показываем игру.
+            loadingScreen.style.display = "none";
+            canvas.style.display = "block";
+            
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
 
-        const keys = {};
-        window.onkeydown = e => keys[e.code] = true;
-        window.onkeyup = e => keys[e.code] = false;
+            const keys = {};
+            window.onkeydown = e => keys[e.code] = true;
+            window.onkeyup = e => keys[e.code] = false;
 
-        function loop() {
-            // 1. Логика движения моего игрока
-            const me = Playroom.myPlayer();
-            if (me) {
-                let pos = me.getState("pos") || {x: canvas.width/2, y: canvas.height/2};
-                const speed = 5;
-                if(keys['KeyW'] || keys['ArrowUp']) pos.y -= speed;
-                if(keys['KeyS'] || keys['ArrowDown']) pos.y += speed;
-                if(keys['KeyA'] || keys['ArrowLeft']) pos.x -= speed;
-                if(keys['KeyD'] || keys['ArrowRight']) pos.x += speed;
-                
-                me.setState("pos", pos);
-            }
-
-            // 2. Отрисовка
-            ctx.fillStyle = '#111';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            // Получаем всех игроков
-            const allPlayers = Playroom.getStates();
-            playerCountText.innerText = "Игроков: " + allPlayers.length;
-
-            allPlayers.forEach(playerState => {
-                const pos = playerState.getState("pos");
-                const profile = playerState.getProfile();
-
-                if (pos) {
-                    // Рисуем игрока
-                    ctx.fillStyle = profile.color.hex;
-                    ctx.beginPath();
-                    ctx.arc(pos.x, pos.y, 25, 0, Math.PI * 2);
-                    ctx.fill();
-
-                    // Рисуем имя
-                    ctx.fillStyle = "white";
-                    ctx.font = "16px Arial";
-                    ctx.textAlign = "center";
-                    ctx.fillText(profile.name, pos.x, pos.y - 35);
+            function loop() {
+                const me = Playroom.myPlayer();
+                if (me) {
+                    let pos = me.getState("pos") || {x: canvas.width/2, y: canvas.height/2};
+                    if(keys['KeyW'] || keys['ArrowUp']) pos.y -= 5;
+                    if(keys['KeyS'] || keys['ArrowDown']) pos.y += 5;
+                    if(keys['KeyA'] || keys['ArrowLeft']) pos.x -= 5;
+                    if(keys['KeyD'] || keys['ArrowRight']) pos.x += 5;
+                    me.setState("pos", pos);
                 }
-            });
 
-            requestAnimationFrame(loop);
+                // Рисование
+                ctx.fillStyle = '#111';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                const players = Playroom.getStates();
+                players.forEach(p => {
+                    const pos = p.getState("pos");
+                    const color = p.getProfile().color.hex;
+                    if (pos) {
+                        ctx.fillStyle = color;
+                        ctx.beginPath();
+                        ctx.arc(pos.x, pos.y, 20, 0, Math.PI*2);
+                        ctx.fill();
+                        
+                        ctx.fillStyle = "white";
+                        ctx.textAlign = "center";
+                        ctx.fillText(p.getProfile().name, pos.x, pos.y - 30);
+                    }
+                });
+                requestAnimationFrame(loop);
+            }
+            loop();
+
+        } catch (err) {
+            statusText.innerText = "ОШИБКА: " + err.message;
+            console.error(err);
         }
-        loop();
-
-    } catch (e) {
-        statusText.innerText = "Ошибка: " + e.message;
-        console.error(e);
     }
-}
 
-init();
-</script>
+    // Ждем, пока Playroom появится в памяти
+    function checkLibrary() {
+        if (typeof Playroom !== "undefined") {
+            start();
+        } else {
+            setTimeout(checkLibrary, 200);
+        }
+    }
+
+    checkLibrary();
+    </script>
 </body>
 </html>
