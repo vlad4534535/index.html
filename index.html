@@ -110,7 +110,16 @@ window.setupPlayroom = async () => {
     }
 
     // Ждем, пока Playroom появится в памяти
-    function checkLibrary() {
+   async function checkLibrary() {
+    try {
+        // Пытаемся загрузить библиотеку через наш новый загрузчик
+        await window.setupPlayroom();
+        start(); // Запускаем игру, если загрузилось
+    } catch (e) {
+        document.getElementById('status').innerText = "ОШИБКА ДОСТУПА. ПОПРОБУЙТЕ ВКЛЮЧИТЬ VPN";
+    }
+}
+checkLibrary();
         if (typeof Playroom !== "undefined") {
             start();
         } else {
@@ -122,4 +131,5 @@ window.setupPlayroom = async () => {
     </script>
 </body>
 </html>
+
 
