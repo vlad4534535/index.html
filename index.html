@@ -21,7 +21,28 @@
 
     <canvas id="gameCanvas"></canvas>
 
-    <script src="https://unpkg.com/playroomkit@1.2.11/dist/multiplayer.js"></script>
+    <script>
+/* Playroom Loader Stub */
+window.setupPlayroom = async () => {
+    const script = document.createElement('script');
+    // Попробуем альтернативный "запасной" сервер
+    script.src = "https://cdn.jsdelivr.net/npm/playroomkit@1.2.11/dist/multiplayer.js";
+    script.crossOrigin = "anonymous";
+    document.head.appendChild(script);
+    
+    return new Promise((resolve, reject) => {
+        script.onload = () => resolve();
+        script.onerror = () => {
+            // Если и этот сервер не сработал, пробуем последний вариант
+            const backupScript = document.createElement('script');
+            backupScript.src = "https://bundle.run/playroomkit@1.2.11";
+            document.head.appendChild(backupScript);
+            backupScript.onload = () => resolve();
+            backupScript.onerror = () => reject(new Error("Все серверы загрузки заблокированы"));
+        };
+    });
+};
+</script>
 
     <script>
     // Главная функция игры
@@ -101,3 +122,4 @@
     </script>
 </body>
 </html>
+
