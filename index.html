@@ -2,117 +2,79 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Tactical Stealth Online</title>
+    <title>Stealth Multiplayer</title>
     <script src="https://unpkg.com/playroomkit/multiplayer.js"></script>
     <style>
-        body { margin: 0; overflow: hidden; background: #050505; font-family: 'Segoe UI', sans-serif; }
+        body { margin: 0; overflow: hidden; background: #050505; font-family: sans-serif; }
         canvas { display: block; }
         #hud {
             position: absolute; top: 20px; left: 20px; color: white;
-            background: rgba(0,0,0,0.85); padding: 15px; border-radius: 8px;
-            pointer-events: none; border-left: 5px solid #3498db; min-width: 220px;
-            z-index: 10;
-        }
-        #alert-box {
-            position: absolute; top: 15%; width: 100%; text-align: center;
-            color: #ff4757; font-size: 32px; font-weight: bold;
-            display: none; pointer-events: none; text-shadow: 0 0 20px black;
+            background: rgba(0,0,0,0.8); padding: 15px; border-radius: 8px;
+            pointer-events: none; border-left: 5px solid #3498db;
         }
     </style>
 </head>
 <body>
 
 <div id="hud">
-    <div style="color: #f1c40f; font-weight: bold;">СТАТУС: <span id="status">ЗАГРУЗКА...</span></div>
-    <div style="font-size: 20px; margin: 5px 0;">HP: <span id="hp">100</span>%</div>
-    <div style="color: #bdc3c7;">ИГРОКОВ: <span id="p-count">1</span></div>
-    <div style="font-size: 14px; margin-top: 5px; color: #3498db;">Управление: WASD + Мышь</div>
+    <div style="color: #f1c40f; font-weight: bold;">СТАТУС: <span id="st">ПОДКЛЮЧЕНИЕ...</span></div>
+    <div>HP: <span id="hp">100</span></div>
+    <div>ИГРОКОВ: <span id="pc">0</span></div>
 </div>
-
-<div id="alert-box">⚠️ ТРЕВОГА!</div>
 
 <script>
 const canvas = document.createElement('canvas');
 const ctx = canvas.getContext('2d');
 document.body.appendChild(canvas);
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+window.onresize = resize;
+resize();
 
 let players = [];
 let ruins = [];
-let bullets = [];
 const keys = {};
-let mousePos = { x: 0, y: 0 };
 
-// --- ГЕНЕРАЦИЯ КАРТЫ (Только для Хоста) ---
-function generateMap() {
-    const map = [];
-    // Безопасный дом
-    map.push({x: 50, y: 50, w: 120, h: 10, c: '#5d4037'});
-    map.push({x: 50, y: 50, w: 10, h: 120, c: '#5d4037'});
-    map.push({x: 50, y: 160, w: 120, h: 10, c: '#5d4037'});
-    // Случайные руины
-    for(let i=0; i < 15; i++) {
-        map.push({
-            x: 250 + Math.random() * (canvas.width - 500),
-            y: 100 + Math.random() * (canvas.height - 250),
-            w: 80 + Math.random() * 100, h: 80 + Math.random() * 100, c: '#0a0a0a'
-        });
-    }
-    return map;
-}
-
-function checkWall(x, y, p = 8) {
-    for(let r of ruins) if(x + p > r.x && x - p < r.x + r.w && y + p > r.y && y - p < r.y + r.h) return true;
-    return false;
-}
-
-// --- ИНИЦИАЛИЗАЦИЯ ИГРЫ ---
+// Функция запуска
 async function start() {
-    // Ждем библиотеку Playroom
-    if (typeof Playroom === "undefined") {
-        setTimeout(start, 500);
-        return;
-    }
-
     try {
-        await Playroom.insertCoin();
-        document.getElementById('status').innerText = "В СЕТИ";
-
-        if (Playroom.isHost()) {
-            ruins = generateMap();
-            Playroom.setState("map", ruins, true);
+        // Проверка библиотеки
+        if (typeof Playroom === "undefined") {
+            setTimeout(start, 500);
+            return;
         }
 
+        // Вход в игру
+        await Playroom.insertCoin();
+        document.getElementById('st').innerText = "В СЕТИ";
+
+        // Генерация карты (только для Хоста)
+        if (Playroom.isHost()) {
+            let map = [];
+            for(let i=0; i<15; i++) {
+                map.push({
+                    x: Math.random() * (window.innerWidth - 100),
+                    y: Math.random() * (window.innerHeight - 100),
+                    w: 100, h: 100
+                });
+            }
+            Playroom.setState("map", map, true);
+        }
+
+        // Когда заходит игрок
         Playroom.onPlayerJoin((state) => {
-            const p = {
-                state,
-                id: state.id,
-                color: state.getProfile().color.hex || "#3498db"
-            };
+            const p = { state, id: state.id, color: state.getProfile().color.hex };
             state.setState("pos", {x: 100, y: 100});
-            state.setState("hp", 100);
             state.setState("angle", 0);
             players.push(p);
-
-            state.onQuit(() => {
-                players = players.filter(pl => pl.id !== state.id);
-            });
+            state.onQuit(() => players = players.filter(pl => pl.id !== state.id));
         });
 
-        // Слушаем выстрелы
-        Playroom.RPC.register("shoot", (data) => {
-            bullets.push({
-                x: data.x, y: data.y,
-                vx: Math.cos(data.angle) * 12,
-                vy: Math.sin(data.angle) * 12,
-                t: 100 // время жизни пули
-            });
-        });
-
-        requestAnimationFrame(gameLoop);
+        loop();
     } catch (e) {
-        document.getElementById('status').innerText = "ОШИБКА";
         console.error(e);
     }
 }
@@ -120,93 +82,49 @@ async function start() {
 // Управление
 window.onkeydown = e => keys[e.code] = true;
 window.onkeyup = e => keys[e.code] = false;
-window.onmousemove = e => { mousePos.x = e.clientX; mousePos.y = e.clientY; };
-window.onclick = () => {
-    const me = Playroom.myPlayer();
-    const pos = me.getState("pos");
-    if(pos) {
-        Playroom.RPC.call("shoot", { x: pos.x, y: pos.y, angle: me.getState("angle") });
-    }
-};
 
-function gameLoop() {
-    ruins = Playroom.getState("map") || [];
+function loop() {
     const me = Playroom.myPlayer();
-
     if (me) {
         let pos = me.getState("pos") || {x: 100, y: 100};
-        let nx = pos.x, ny = pos.y;
-        const speed = 3.5;
-
-        if(keys['KeyW']) ny -= speed; if(keys['KeyS']) ny += speed;
-        if(keys['KeyA']) nx -= speed; if(keys['KeyD']) nx += speed;
-
-        if(!checkWall(nx, pos.y)) pos.x = nx;
-        if(!checkWall(pos.x, ny)) pos.y = ny;
-
+        if(keys['KeyW']) pos.y -= 3;
+        if(keys['KeyS']) pos.y += 3;
+        if(keys['KeyA']) pos.x -= 3;
+        if(keys['KeyD']) pos.x += 3;
         me.setState("pos", pos);
-        me.setState("angle", Math.atan2(mousePos.y - pos.y, mousePos.x - pos.x));
-        
-        document.getElementById('hp').innerText = Math.ceil(me.getState("hp") || 100);
     }
 
     draw();
-    requestAnimationFrame(gameLoop);
+    requestAnimationFrame(loop);
 }
 
 function draw() {
     ctx.fillStyle = '#1e272e';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Стены
-    ruins.forEach(r => { ctx.fillStyle = r.c; ctx.fillRect(r.x, r.y, r.w, r.h); });
+    // Рисуем стены
+    ruins = Playroom.getState("map") || [];
+    ctx.fillStyle = "#0a0a0a";
+    ruins.forEach(r => ctx.fillRect(r.x, r.y, r.w, r.h));
 
-    // Пули
-    ctx.fillStyle = "yellow";
-    for(let i = bullets.length - 1; i >= 0; i--) {
-        let b = bullets[i];
-        b.x += b.vx; b.y += b.vy; b.t--;
-        ctx.fillRect(b.x - 2, b.y - 2, 4, 4);
-        if(checkWall(b.x, b.y) || b.t < 0) bullets.splice(i, 1);
-    }
-
-    // Игроки
+    // Рисуем игроков
     players.forEach(p => {
-        const pPos = p.state.getState("pos");
-        const pAng = p.state.getState("angle") || 0;
-        if(pPos) {
-            ctx.save();
-            ctx.translate(pPos.x, pPos.y);
-            ctx.rotate(pAng);
+        const pos = p.state.getState("pos");
+        if (pos) {
             ctx.fillStyle = p.color;
-            ctx.beginPath(); ctx.arc(0, 0, 12, 0, Math.PI*2); ctx.fill();
-            ctx.fillStyle = "#000"; ctx.fillRect(10, -4, 20, 8); // Пушка
-            ctx.restore();
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, 15, 0, Math.PI*2);
+            ctx.fill();
             
-            // HP Bar над игроком
-            const pHP = p.state.getState("hp") || 100;
-            ctx.fillStyle = 'red'; ctx.fillRect(pPos.x - 15, pPos.y - 25, 30, 4);
-            ctx.fillStyle = 'lime'; ctx.fillRect(pPos.x - 15, pPos.y - 25, 30 * (pHP/100), 4);
+            // Имя игрока
+            ctx.fillStyle = "white";
+            ctx.fillText(p.state.getProfile().name, pos.x - 20, pos.y - 25);
         }
     });
 
-    // ТУМАН ВОЙНЫ (для текущего игрока)
-    const me = Playroom.myPlayer();
-    if (me && me.getState("pos")) {
-        const pos = me.getState("pos");
-        ctx.globalCompositeOperation = 'destination-in';
-        let grad = ctx.createRadialGradient(pos.x, pos.y, 100, pos.x, pos.y, 450);
-        grad.addColorStop(0, 'rgba(0,0,0,1)');
-        grad.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.globalCompositeOperation = 'source-over';
-    }
-
-    document.getElementById('p-count').innerText = players.length;
+    document.getElementById('pc').innerText = players.length;
 }
 
-// Запуск
 start();
 </script>
 </body>
