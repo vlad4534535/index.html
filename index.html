@@ -2,100 +2,102 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Multiplayer Game</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Моя Мультиплеер Игра</title>
     <script src="https://cdn.jsdelivr.net/npm/playroomkit@1.2.11/dist/multiplayer.js"></script>
     <style>
-        body { margin: 0; background: #111; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; overflow: hidden; font-family: sans-serif; }
-        #status { font-size: 24px; color: #f1c40f; }
-        canvas { display: none; position: absolute; top: 0; left: 0; }
+        body { margin: 0; background: #111; color: white; font-family: sans-serif; overflow: hidden; }
+        canvas { display: block; }
+        #ui { position: absolute; top: 10px; left: 10px; pointer-events: none; z-index: 10; }
+        .stat { background: rgba(0,0,0,0.5); padding: 5px 10px; border-radius: 5px; margin-bottom: 5px; }
     </style>
 </head>
 <body>
 
     <div id="ui">
-        <div id="status">ПРОВЕРКА БИБЛИОТЕКИ...</div>
-        <div id="players">Игроков: 0</div>
+        <div class="stat" id="status">Подключение...</div>
+        <div class="stat" id="playerCount">Игроков: 0</div>
     </div>
     <canvas id="gameCanvas"></canvas>
 
 <script>
 async function init() {
     const statusText = document.getElementById('status');
-    
-    // 1. Проверяем, загрузилась ли библиотека
-    if (typeof Playroom === "undefined") {
-        statusText.innerText = "ОШИБКА: БИБЛИОТЕКА НЕ ЗАГРУЗИЛАСЬ. ПОПРОБУЙТЕ ВЫКЛЮЧИТЬ VPN ИЛИ ADBLOCK.";
-        return;
-    }
+    const playerCountText = document.getElementById('playerCount');
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
 
-    try {
-        statusText.innerText = "ПОДКЛЮЧЕНИЕ К СЕТИ...";
-        
-        // 2. Входим в мультиплеер
-        await Playroom.insertCoin();
-        statusText.innerText = "В СЕТИ!";
-        document.getElementById('gameCanvas').style.display = 'block';
-
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
+    // Настройка размера экрана
+    function resize() {
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
+    }
+    window.onresize = resize;
+    resize();
 
-        let players = [];
-        
-        // 3. Когда кто-то заходит
-        Playroom.onPlayerJoin((state) => {
-            const p = { state, id: state.id, color: state.getProfile().color.hex };
-            state.setState("pos", {x: 200, y: 200});
-            players.push(p);
-            state.onQuit(() => players = players.filter(pl => pl.id !== state.id));
-        });
+    try {
+        // Запуск мультиплеера
+        // skipLobby: false заставит игру показать окно выбора имени и цвета
+        await Playroom.insertCoin({ skipLobby: false });
+        statusText.innerText = "В СЕТИ";
+        statusText.style.color = "#2ecc71";
 
-        // 4. Движение (WASD)
         const keys = {};
         window.onkeydown = e => keys[e.code] = true;
         window.onkeyup = e => keys[e.code] = false;
 
         function loop() {
+            // 1. Логика движения моего игрока
             const me = Playroom.myPlayer();
             if (me) {
-                let pos = me.getState("pos") || {x: 200, y: 200};
-                if(keys['KeyW']) pos.y -= 5;
-                if(keys['KeyS']) pos.y += 5;
-                if(keys['KeyA']) pos.x -= 5;
-                if(keys['KeyD']) pos.x += 5;
+                let pos = me.getState("pos") || {x: canvas.width/2, y: canvas.height/2};
+                const speed = 5;
+                if(keys['KeyW'] || keys['ArrowUp']) pos.y -= speed;
+                if(keys['KeyS'] || keys['ArrowDown']) pos.y += speed;
+                if(keys['KeyA'] || keys['ArrowLeft']) pos.x -= speed;
+                if(keys['KeyD'] || keys['ArrowRight']) pos.x += speed;
+                
                 me.setState("pos", pos);
             }
 
-            // Отрисовка
+            // 2. Отрисовка
             ctx.fillStyle = '#111';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            players.forEach(p => {
-                const pos = p.state.getState("pos");
+
+            // Получаем всех игроков
+            const allPlayers = Playroom.getStates();
+            playerCountText.innerText = "Игроков: " + allPlayers.length;
+
+            allPlayers.forEach(playerState => {
+                const pos = playerState.getState("pos");
+                const profile = playerState.getProfile();
+
                 if (pos) {
-                    ctx.fillStyle = p.color;
+                    // Рисуем игрока
+                    ctx.fillStyle = profile.color.hex;
                     ctx.beginPath();
-                    ctx.arc(pos.x, pos.y, 20, 0, Math.PI*2);
+                    ctx.arc(pos.x, pos.y, 25, 0, Math.PI * 2);
                     ctx.fill();
+
+                    // Рисуем имя
+                    ctx.fillStyle = "white";
+                    ctx.font = "16px Arial";
+                    ctx.textAlign = "center";
+                    ctx.fillText(profile.name, pos.x, pos.y - 35);
                 }
             });
-            
-            document.getElementById('players').innerText = "Игроков: " + players.length;
+
             requestAnimationFrame(loop);
         }
         loop();
 
     } catch (e) {
-        statusText.innerText = "ОШИБКА ПОДКЛЮЧЕНИЯ: " + e.message;
+        statusText.innerText = "Ошибка: " + e.message;
+        console.error(e);
     }
 }
 
-// Запуск
 init();
 </script>
 </body>
 </html>
-
-
-
