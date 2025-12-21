@@ -10,26 +10,28 @@
         #hud {
             position: absolute; top: 20px; left: 20px; color: white;
             background: rgba(0,0,0,0.85); padding: 15px; border-radius: 8px;
-            pointer-events: none; border-left: 5px solid #3498db; min-width: 200px;
+            pointer-events: none; border-left: 5px solid #3498db; min-width: 220px;
+            z-index: 10;
         }
         #alert-box {
             position: absolute; top: 15%; width: 100%; text-align: center;
-            color: #ff4757; font-size: 32px; font-weight: bold; display: none;
+            color: #ff4757; font-size: 32px; font-weight: bold;
+            display: none; pointer-events: none; text-shadow: 0 0 20px black;
         }
     </style>
 </head>
 <body>
 
 <div id="hud">
-    <div style="color: #f1c40f;">СТАТУС: <span id="status">ПОДКЛЮЧЕНИЕ...</span></div>
-    <div style="font-size: 20px;">HP: <span id="hp">100</span>%</div>
-    <div style="color: #bdc3c7;">ИГРОКОВ: <span id="p-count">0</span></div>
+    <div style="color: #f1c40f; font-weight: bold;">СТАТУС: <span id="status">ЗАГРУЗКА...</span></div>
+    <div style="font-size: 20px; margin: 5px 0;">HP: <span id="hp">100</span>%</div>
+    <div style="color: #bdc3c7;">ИГРОКОВ: <span id="p-count">1</span></div>
+    <div style="font-size: 14px; margin-top: 5px; color: #3498db;">Управление: WASD + Мышь</div>
 </div>
-<div id="alert-box">⚠️ ТРЕВОГА: ВАС ЗАМЕТИЛИ!</div>
+
+<div id="alert-box">⚠️ ТРЕВОГА!</div>
 
 <script>
-const { onPlayerJoin, insertCoin, isHost, myPlayer, RPC, setState, getState } = Playroom;
-
 const canvas = document.createElement('canvas');
 const ctx = canvas.getContext('2d');
 document.body.appendChild(canvas);
@@ -38,158 +40,173 @@ canvas.height = window.innerHeight;
 
 let players = [];
 let ruins = [];
-let enemies = [];
 let bullets = [];
 const keys = {};
+let mousePos = { x: 0, y: 0 };
 
-// --- СЕТЕВАЯ СТРЕЛЬБА ---
-const shootRPC = RPC.register("shoot", (data) => {
-    bullets.push({
-        x: data.x, y: data.y,
-        vx: Math.cos(data.angle) * 12,
-        vy: Math.sin(data.angle) * 12,
-        ownerId: data.id
-    });
-});
+// --- ГЕНЕРАЦИЯ КАРТЫ (Только для Хоста) ---
+function generateMap() {
+    const map = [];
+    // Безопасный дом
+    map.push({x: 50, y: 50, w: 120, h: 10, c: '#5d4037'});
+    map.push({x: 50, y: 50, w: 10, h: 120, c: '#5d4037'});
+    map.push({x: 50, y: 160, w: 120, h: 10, c: '#5d4037'});
+    // Случайные руины
+    for(let i=0; i < 15; i++) {
+        map.push({
+            x: 250 + Math.random() * (canvas.width - 500),
+            y: 100 + Math.random() * (canvas.height - 250),
+            w: 80 + Math.random() * 100, h: 80 + Math.random() * 100, c: '#0a0a0a'
+        });
+    }
+    return map;
+}
 
 function checkWall(x, y, p = 8) {
-    for(let r of ruins) {
-        if(x + p > r.x && x - p < r.x + r.w && y + p > r.y && y - p < r.y + r.h) return true;
-    }
+    for(let r of ruins) if(x + p > r.x && x - p < r.x + r.w && y + p > r.y && y - p < r.y + r.h) return true;
     return false;
 }
 
+// --- ИНИЦИАЛИЗАЦИЯ ИГРЫ ---
 async function start() {
-    await insertCoin();
-    document.getElementById('status').innerText = "В СЕТИ";
-
-    // Инициализация карты Хостом
-    if (isHost()) {
-        const map = [
-            {x: 50, y: 50, w: 100, h: 10, c: '#5d4037'},
-            {x: 50, y: 50, w: 10, h: 100, c: '#5d4037'}
-        ];
-        for(let i=0; i<15; i++) {
-            map.push({
-                x: 300 + Math.random() * (canvas.width - 500),
-                y: 50 + Math.random() * (canvas.height - 200),
-                w: 100, h: 100, c: '#0a0a0a'
-            });
-        }
-        setState("map", map, true);
-
-        // Создаем врагов
-        let startEnemies = [];
-        for(let i=0; i<3; i++) {
-            startEnemies.push({ id: i, x: 800, y: 200 + i*150, hp: 100, angle: Math.PI, alerted: false });
-        }
-        setState("enemies", startEnemies, true);
+    // Ждем библиотеку Playroom
+    if (typeof Playroom === "undefined") {
+        setTimeout(start, 500);
+        return;
     }
 
-    onPlayerJoin((state) => {
-        const p = { state, id: state.id, color: state.getProfile().color.hex };
-        state.setState("pos", {x: 80, y: 80});
-        state.setState("hp", 100);
-        players.push(p);
-        state.onQuit(() => players = players.filter(pl => pl.id !== state.id));
-    });
+    try {
+        await Playroom.insertCoin();
+        document.getElementById('status').innerText = "В СЕТИ";
 
-    loop();
+        if (Playroom.isHost()) {
+            ruins = generateMap();
+            Playroom.setState("map", ruins, true);
+        }
+
+        Playroom.onPlayerJoin((state) => {
+            const p = {
+                state,
+                id: state.id,
+                color: state.getProfile().color.hex || "#3498db"
+            };
+            state.setState("pos", {x: 100, y: 100});
+            state.setState("hp", 100);
+            state.setState("angle", 0);
+            players.push(p);
+
+            state.onQuit(() => {
+                players = players.filter(pl => pl.id !== state.id);
+            });
+        });
+
+        // Слушаем выстрелы
+        Playroom.RPC.register("shoot", (data) => {
+            bullets.push({
+                x: data.x, y: data.y,
+                vx: Math.cos(data.angle) * 12,
+                vy: Math.sin(data.angle) * 12,
+                t: 100 // время жизни пули
+            });
+        });
+
+        requestAnimationFrame(gameLoop);
+    } catch (e) {
+        document.getElementById('status').innerText = "ОШИБКА";
+        console.error(e);
+    }
 }
 
+// Управление
 window.onkeydown = e => keys[e.code] = true;
 window.onkeyup = e => keys[e.code] = false;
+window.onmousemove = e => { mousePos.x = e.clientX; mousePos.y = e.clientY; };
 window.onclick = () => {
-    const me = myPlayer();
+    const me = Playroom.myPlayer();
     const pos = me.getState("pos");
-    shootRPC({ x: pos.x, y: pos.y, angle: me.getState("angle"), id: me.id });
+    if(pos) {
+        Playroom.RPC.call("shoot", { x: pos.x, y: pos.y, angle: me.getState("angle") });
+    }
 };
 
-function loop() {
-    ruins = getState("map") || [];
-    enemies = getState("enemies") || [];
+function gameLoop() {
+    ruins = Playroom.getState("map") || [];
+    const me = Playroom.myPlayer();
 
-    const me = myPlayer();
     if (me) {
-        let pos = me.getState("pos") || {x: 80, y: 80};
+        let pos = me.getState("pos") || {x: 100, y: 100};
         let nx = pos.x, ny = pos.y;
-        if(keys['KeyW']) ny -= 3.5; if(keys['KeyS']) ny += 3.5;
-        if(keys['KeyA']) nx -= 3.5; if(keys['KeyD']) nx += 3.5;
-        
+        const speed = 3.5;
+
+        if(keys['KeyW']) ny -= speed; if(keys['KeyS']) ny += speed;
+        if(keys['KeyA']) nx -= speed; if(keys['KeyD']) nx += speed;
+
         if(!checkWall(nx, pos.y)) pos.x = nx;
         if(!checkWall(pos.x, ny)) pos.y = ny;
-        
-        me.setState("pos", pos);
-        me.setState("angle", Math.atan2(window.mouseY - pos.y, window.mouseX - pos.x));
-    }
 
-    // Хост управляет логикой врагов
-    if (isHost()) {
-        enemies.forEach(en => {
-            // Простейший патруль
-            if (!en.alerted) en.x -= 0.5; 
-        });
-        setState("enemies", enemies);
+        me.setState("pos", pos);
+        me.setState("angle", Math.atan2(mousePos.y - pos.y, mousePos.x - pos.x));
+        
+        document.getElementById('hp').innerText = Math.ceil(me.getState("hp") || 100);
     }
 
     draw();
-    requestAnimationFrame(loop);
+    requestAnimationFrame(gameLoop);
 }
-
-// Отслеживание мыши
-window.onmousemove = e => { window.mouseX = e.clientX; window.mouseY = e.clientY; };
 
 function draw() {
     ctx.fillStyle = '#1e272e';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+    // Стены
     ruins.forEach(r => { ctx.fillStyle = r.c; ctx.fillRect(r.x, r.y, r.w, r.h); });
 
     // Пули
     ctx.fillStyle = "yellow";
-    bullets.forEach((b, i) => {
-        b.x += b.vx; b.y += b.vy;
-        ctx.fillRect(b.x-2, b.y-2, 4, 4);
-        if(checkWall(b.x, b.y)) bullets.splice(i, 1);
-    });
-
-    // Враги
-    enemies.forEach(en => {
-        ctx.fillStyle = "#27ae60";
-        ctx.beginPath(); ctx.arc(en.x, en.y, 15, 0, Math.PI*2); ctx.fill();
-    });
+    for(let i = bullets.length - 1; i >= 0; i--) {
+        let b = bullets[i];
+        b.x += b.vx; b.y += b.vy; b.t--;
+        ctx.fillRect(b.x - 2, b.y - 2, 4, 4);
+        if(checkWall(b.x, b.y) || b.t < 0) bullets.splice(i, 1);
+    }
 
     // Игроки
     players.forEach(p => {
-        const pos = p.state.getState("pos");
-        const ang = p.state.getState("angle");
-        if(pos) {
+        const pPos = p.state.getState("pos");
+        const pAng = p.state.getState("angle") || 0;
+        if(pPos) {
             ctx.save();
-            ctx.translate(pos.x, pos.y);
-            ctx.rotate(ang || 0);
+            ctx.translate(pPos.x, pPos.y);
+            ctx.rotate(pAng);
             ctx.fillStyle = p.color;
             ctx.beginPath(); ctx.arc(0, 0, 12, 0, Math.PI*2); ctx.fill();
-            ctx.fillStyle = "black"; ctx.fillRect(10, -4, 20, 8);
+            ctx.fillStyle = "#000"; ctx.fillRect(10, -4, 20, 8); // Пушка
             ctx.restore();
+            
+            // HP Bar над игроком
+            const pHP = p.state.getState("hp") || 100;
+            ctx.fillStyle = 'red'; ctx.fillRect(pPos.x - 15, pPos.y - 25, 30, 4);
+            ctx.fillStyle = 'lime'; ctx.fillRect(pPos.x - 15, pPos.y - 25, 30 * (pHP/100), 4);
         }
     });
 
-    // Туман войны
-    const me = myPlayer();
+    // ТУМАН ВОЙНЫ (для текущего игрока)
+    const me = Playroom.myPlayer();
     if (me && me.getState("pos")) {
-        const pPos = me.getState("pos");
+        const pos = me.getState("pos");
         ctx.globalCompositeOperation = 'destination-in';
-        let grad = ctx.createRadialGradient(pPos.x, pPos.y, 100, pPos.x, pPos.y, 400);
+        let grad = ctx.createRadialGradient(pos.x, pos.y, 100, pos.x, pos.y, 450);
         grad.addColorStop(0, 'rgba(0,0,0,1)');
         grad.addColorStop(1, 'rgba(0,0,0,0)');
         ctx.fillStyle = grad;
-        ctx.fillRect(0,0, canvas.width, canvas.height);
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.globalCompositeOperation = 'source-over';
     }
 
     document.getElementById('p-count').innerText = players.length;
 }
 
+// Запуск
 start();
 </script>
 </body>
