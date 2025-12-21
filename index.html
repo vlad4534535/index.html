@@ -2,85 +2,83 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Online Game</title>
-    <script src="https://cdn.jsdelivr.net/npm/playroomkit/multiplayer.js"></script>
+    <title>Multiplayer Game</title>
+    <script src="https://unpkg.com/playroomkit@1.2.11/dist/multiplayer.js"></script>
     <style>
-        body { margin: 0; background: #111; color: white; font-family: sans-serif; overflow: hidden; display: flex; align-items: center; justify-content: center; height: 100vh; }
-        canvas { display: none; position: absolute; top: 0; left: 0; }
-        #status-ui { text-align: center; z-index: 10; }
+        body { margin: 0; background: #111; color: white; overflow: hidden; font-family: sans-serif; }
+        #status { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 20px; }
+        canvas { display: block; }
     </style>
 </head>
 <body>
 
-    <div id="status-ui">
-        <div id="loader">ЗАГРУЗКА...</div>
-    </div>
+    <div id="status">ЗАГРУЗКА...</div>
     <canvas id="gameCanvas"></canvas>
 
-    <script>
-    async function start() {
-        const status = document.getElementById('loader');
-        
-        // Проверка: загрузился ли скрипт в принципе
-        if (typeof Playroom === "undefined") {
-            status.innerHTML = "ОШИБКА: Сервер библиотеки недоступен.<br>Попробуй включить или выключить VPN.";
-            return;
-        }
-
-        try {
-            // Входим в игру
-            await Playroom.insertCoin();
-            
-            // Скрываем загрузку
-            document.getElementById('status-ui').style.display = "none";
-            const canvas = document.getElementById('gameCanvas');
-            canvas.style.display = "block";
-            const ctx = canvas.getContext('2d');
-
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-
-            const keys = {};
-            window.onkeydown = e => keys[e.code] = true;
-            window.onkeyup = e => keys[e.code] = false;
-
-            function loop() {
-                const me = Playroom.myPlayer();
-                if (me) {
-                    let pos = me.getState("pos") || {x: canvas.width/2, y: canvas.height/2};
-                    if(keys['KeyW']) pos.y -= 5;
-                    if(keys['KeyS']) pos.y += 5;
-                    if(keys['KeyA']) pos.x -= 5;
-                    if(keys['KeyD']) pos.x += 5;
-                    me.setState("pos", pos);
-                }
-
-                ctx.fillStyle = '#111';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-                const players = Playroom.getStates();
-                players.forEach(p => {
-                    const pos = p.getState("pos");
-                    if (pos) {
-                        ctx.fillStyle = p.getProfile().color.hex;
-                        ctx.beginPath();
-                        ctx.arc(pos.x, pos.y, 20, 0, Math.PI*2);
-                        ctx.fill();
-                        ctx.fillStyle = "white";
-                        ctx.fillText(p.getProfile().name, pos.x - 15, pos.y - 25);
-                    }
-                });
-                requestAnimationFrame(loop);
-            }
-            loop();
-        } catch (e) {
-            status.innerText = "Ошибка сети: " + e.message;
-        }
+<script>
+async function init() {
+    const statusText = document.getElementById('status');
+    
+    // Проверка библиотеки
+    if (typeof Playroom === "undefined") {
+        statusText.innerText = "ОШИБКА: ОБНОВИТЕ СТРАНИЦУ (CTRL+F5)";
+        return;
     }
 
-    // Запуск через небольшую паузу, чтобы браузер успел "увидеть" скрипт
-    setTimeout(start, 1000);
-    </script>
+    try {
+        // Вход в игру
+        await Playroom.insertCoin();
+        statusText.style.display = "none";
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        const keys = {};
+        window.onkeydown = e => keys[e.code] = true;
+        window.onkeyup = e => keys[e.code] = false;
+
+        function loop() {
+            const me = Playroom.myPlayer();
+            if (me) {
+                let pos = me.getState("pos") || {x: canvas.width/2, y: canvas.height/2};
+                if(keys['KeyW']) pos.y -= 5;
+                if(keys['KeyS']) pos.y += 5;
+                if(keys['KeyA']) pos.x -= 5;
+                if(keys['KeyD']) pos.x += 5;
+                me.setState("pos", pos);
+            }
+
+            // Отрисовка
+            ctx.fillStyle = '#111';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            const players = Playroom.getStates();
+            players.forEach(p => {
+                const pos = p.getState("pos");
+                if (pos) {
+                    ctx.fillStyle = p.getProfile().color.hex;
+                    ctx.beginPath();
+                    ctx.arc(pos.x, pos.y, 20, 0, Math.PI*2);
+                    ctx.fill();
+                    
+                    ctx.fillStyle = "white";
+                    ctx.textAlign = "center";
+                    ctx.fillText(p.getProfile().name, pos.x, pos.y - 30);
+                }
+            });
+            requestAnimationFrame(loop);
+        }
+        loop();
+
+    } catch (e) {
+        statusText.innerText = "ОШИБКА: " + e.message;
+    }
+}
+
+// Запуск после полной загрузки страницы
+window.onload = init;
+</script>
 </body>
 </html>
