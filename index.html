@@ -2,83 +2,418 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Multiplayer Game</title>
-    <script src="https://unpkg.com/playroomkit@1.2.11/dist/multiplayer.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Counter Cat 2</title>
     <style>
-        body { margin: 0; background: #111; color: white; overflow: hidden; font-family: sans-serif; }
-        #status { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 20px; }
-        canvas { display: block; }
+        /* Базовые стили */
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; }
+        body, html { width: 100vw; height: 100vh; background-color: #1a1a2e; color: white; touch-action: none; overflow: hidden; }
+        
+        /* Экраны */
+        .screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; flex-direction: column; }
+        .active { display: flex; }
+
+        /* Экран входа */
+        #login-screen { justify-content: center; align-items: center; background: #16213e; }
+        .login-box { background: #0f3460; padding: 30px; border-radius: 15px; text-align: center; width: 90%; max-width: 400px; }
+        input { padding: 15px; width: 100%; border-radius: 10px; border: none; font-size: 18px; margin: 15px 0; outline: none; text-align: center;}
+        button { padding: 15px; width: 100%; border-radius: 10px; border: none; background: #e94560; color: white; font-size: 18px; font-weight: bold; cursor: pointer; margin-bottom: 10px;}
+        button:active { transform: scale(0.95); }
+
+        /* Главное меню */
+        #main-menu { background: #1a1a2e; justify-content: space-between; padding: 20px; }
+        .top-bar { display: flex; justify-content: space-between; align-items: center; background: #0f3460; padding: 15px; border-radius: 15px; }
+        .avatar { width: 50px; height: 50px; background: #e94560; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 24px; }
+        .user-info { flex-grow: 1; margin-left: 15px; }
+        .elo-box { background: #ffd700; color: #000; padding: 10px 15px; border-radius: 10px; font-weight: bold; cursor: pointer; }
+        
+        .mode-buttons { display: flex; flex-direction: column; gap: 15px; margin: auto 0; }
+        .mode-btn { padding: 25px; font-size: 22px; border-radius: 15px; background: #e94560; }
+        .mode-btn.disabled { background: #555; cursor: not-allowed; }
+
+        .bottom-bar { display: flex; justify-content: space-between; gap: 10px; }
+        .bottom-bar button { background: #4a4e69; }
+
+        /* Лидерборд Модалка */
+        #modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: none; justify-content: center; align-items: center; z-index: 100; }
+        .modal-content { background: #0f3460; width: 90%; max-height: 80%; border-radius: 15px; padding: 20px; overflow-y: auto; }
+        .leaderboard-item { display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #1a1a2e; }
+
+        /* Игровой экран */
+        #game-screen { position: relative; background: #222; }
+        canvas { width: 100%; height: 100%; display: block; }
+        .game-ui { position: absolute; top: 20px; left: 0; width: 100%; display: flex; justify-content: space-around; pointer-events: none; font-size: 30px; font-weight: bold; opacity: 0.5; }
+        
+        /* Кнопка способности */
+        #ability-btn { position: absolute; bottom: 30px; right: 30px; width: 80px; height: 80px; border-radius: 50%; background: #00d2ff; color: #000; font-size: 14px; display: flex; justify-content: center; align-items: center; text-align: center; border: 4px solid #fff; box-shadow: 0 0 15px #00d2ff; z-index: 10; pointer-events: auto;}
+        
+        #back-btn { position: absolute; top: 20px; left: 20px; width: 60px; height: 40px; font-size: 14px; z-index: 10; pointer-events: auto; }
     </style>
 </head>
 <body>
 
-    <div id="status">ЗАГРУЗКА...</div>
-    <canvas id="gameCanvas"></canvas>
+    <div id="login-screen" class="screen active">
+        <div class="login-box">
+            <h2>Counter Cat 2</h2>
+            <input type="text" id="nickname-input" placeholder="Введи никнейм" maxlength="12">
+            <button id="start-btn">Играть</button>
+        </div>
+    </div>
 
-<script>
-async function init() {
-    const statusText = document.getElementById('status');
-    
-    // Проверка библиотеки
-    if (typeof Playroom === "undefined") {
-        statusText.innerText = "ОШИБКА: ОБНОВИТЕ СТРАНИЦУ (CTRL+F5)";
-        return;
-    }
+    <div id="main-menu" class="screen">
+        <div class="top-bar">
+            <div class="avatar">🐱</div>
+            <div class="user-info">
+                <div id="display-nick" style="font-weight: bold; font-size: 20px;">Player</div>
+                <div style="color: #ffd700; font-size: 14px;">Монеты: <span id="display-coins">0</span></div>
+            </div>
+            <div class="elo-box" id="elo-btn">ELO: <span id="display-elo">0</span></div>
+        </div>
 
-    try {
-        // Вход в игру
-        await Playroom.insertCoin();
-        statusText.style.display = "none";
+        <div class="mode-buttons">
+            <button class="mode-btn" id="mode-training">Тренировка</button>
+            <button class="mode-btn disabled" id="mode-online">Онлайн (1 на 1)</button>
+            <button class="mode-btn disabled" id="mode-duo">Дуо (2 на 2)</button>
+        </div>
 
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
+        <div class="bottom-bar">
+            <button id="shop-btn">Магазин (Бойцы)</button>
+            <button id="settings-btn">Настройки 🇺🇦/🇬🇧</button>
+        </div>
+    </div>
 
-        const keys = {};
-        window.onkeydown = e => keys[e.code] = true;
-        window.onkeyup = e => keys[e.code] = false;
+    <div id="modal-overlay">
+        <div class="modal-content">
+            <h2 style="text-align: center; margin-bottom: 20px;">Топ Игроков</h2>
+            <div id="leaderboard-list">Загрузка...</div>
+            <button id="close-modal" style="margin-top: 20px;">Закрыть</button>
+        </div>
+    </div>
 
-        function loop() {
-            const me = Playroom.myPlayer();
-            if (me) {
-                let pos = me.getState("pos") || {x: canvas.width/2, y: canvas.height/2};
-                if(keys['KeyW']) pos.y -= 5;
-                if(keys['KeyS']) pos.y += 5;
-                if(keys['KeyA']) pos.x -= 5;
-                if(keys['KeyD']) pos.x += 5;
-                me.setState("pos", pos);
+    <div id="game-screen" class="screen">
+        <button id="back-btn">Выход</button>
+        <div class="game-ui">
+            <div id="score-ai">0</div>
+            <div id="score-player">0</div>
+        </div>
+        <canvas id="gameCanvas"></canvas>
+        <div id="ability-btn">СПОСОБ<br>НОСТЬ</div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getDatabase, ref, set, get, update, child, query, orderByChild, limitToLast } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+        // Конфиг пользователя
+        const firebaseConfig = {
+            apiKey: "AIzaSyCuXDgwCpLzJl_i6NIgwhA1nanVzTs7fnM",
+            authDomain: "three-cats-online.firebaseapp.com",
+            projectId: "three-cats-online",
+            storageBucket: "three-cats-online.firebasestorage.app",
+            messagingSenderId: "1965511705",
+            appId: "1:1965511705:web:86a405ef672ae7bfa18688",
+            measurementId: "G-MD1FZQEQC9"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+
+        // --- Глобальные переменные пользователя ---
+        let currentUser = { id: null, nick: "", elo: 0, coins: 0, cat: "Коржик" };
+
+        // --- UI Элементы ---
+        const screens = {
+            login: document.getElementById('login-screen'),
+            menu: document.getElementById('main-menu'),
+            game: document.getElementById('game-screen')
+        };
+        const eloBtn = document.getElementById('elo-btn');
+        const modal = document.getElementById('modal-overlay');
+
+        function switchScreen(screenName) {
+            Object.values(screens).forEach(s => s.classList.remove('active'));
+            screens[screenName].classList.add('active');
+        }
+
+        // --- Авторизация (Локальная + Firebase) ---
+        document.getElementById('start-btn').addEventListener('click', async () => {
+            const nick = document.getElementById('nickname-input').value.trim();
+            if (!nick) return alert("Введи никнейм!");
+            
+            // Простая генерация ID
+            let userId = localStorage.getItem('cc2_userid');
+            if (!userId) {
+                userId = 'user_' + Math.random().toString(36).substr(2, 9);
+                localStorage.setItem('cc2_userid', userId);
+                
+                // Создаем в БД
+                await set(ref(db, 'users/' + userId), {
+                    nick: nick, elo: 0, coins: 0, cat: "Коржик"
+                });
             }
 
-            // Отрисовка
-            ctx.fillStyle = '#111';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            const players = Playroom.getStates();
-            players.forEach(p => {
-                const pos = p.getState("pos");
-                if (pos) {
-                    ctx.fillStyle = p.getProfile().color.hex;
-                    ctx.beginPath();
-                    ctx.arc(pos.x, pos.y, 20, 0, Math.PI*2);
-                    ctx.fill();
-                    
-                    ctx.fillStyle = "white";
-                    ctx.textAlign = "center";
-                    ctx.fillText(p.getProfile().name, pos.x, pos.y - 30);
-                }
-            });
-            requestAnimationFrame(loop);
+            // Грузим из БД
+            const snapshot = await get(child(ref(db), `users/${userId}`));
+            if (snapshot.exists()) {
+                const data = snapshot.val();
+                currentUser = { id: userId, ...data };
+                updateMenuUI();
+                switchScreen('menu');
+            }
+        });
+
+        function updateMenuUI() {
+            document.getElementById('display-nick').innerText = currentUser.nick;
+            document.getElementById('display-elo').innerText = currentUser.elo;
+            document.getElementById('display-coins').innerText = currentUser.coins;
         }
-        loop();
 
-    } catch (e) {
-        statusText.innerText = "ОШИБКА: " + e.message;
-    }
-}
+        // --- ELO Расчет ---
+        function calculateEloChange(currentElo, isWin) {
+            let gain = 20, loss = 5;
+            if (currentElo <= 1000) { gain = Math.floor(Math.random()*91)+10; loss = Math.floor(Math.random()*3)+5; } // +10..100, -5..-7
+            else if (currentElo <= 2000) { gain = Math.floor(Math.random()*46)+5; loss = Math.floor(Math.random()*3)+6; }
+            else if (currentElo <= 5000) { gain = Math.floor(Math.random()*36)+5; loss = Math.floor(Math.random()*2)+6; }
+            else if (currentElo <= 10000) { gain = Math.floor(Math.random()*31)+5; loss = Math.floor(Math.random()*3)+5; }
+            
+            return isWin ? gain : -loss;
+        }
 
-// Запуск после полной загрузки страницы
-window.onload = init;
-</script>
+        async function applyMatchResult(isWin, isRanked) {
+            if (!isRanked) return; // Тренировка не дает наград
+            
+            const eloChange = calculateEloChange(currentUser.elo, isWin);
+            currentUser.elo = Math.max(0, currentUser.elo + eloChange);
+            currentUser.coins += isWin ? 10 : -3;
+            currentUser.coins = Math.max(0, currentUser.coins);
+
+            updateMenuUI();
+            await update(ref(db, 'users/' + currentUser.id), { elo: currentUser.elo, coins: currentUser.coins });
+        }
+
+        // --- Лидерборд ---
+        eloBtn.addEventListener('click', async () => {
+            modal.style.display = 'flex';
+            const list = document.getElementById('leaderboard-list');
+            list.innerHTML = 'Загрузка...';
+
+            const topQuery = query(ref(db, 'users'), orderByChild('elo'), limitToLast(10));
+            const snapshot = await get(topQuery);
+            if (snapshot.exists()) {
+                let html = '';
+                let players = [];
+                snapshot.forEach(child => { players.push(child.val()); });
+                players.reverse(); // По убыванию
+                
+                players.forEach((p, index) => {
+                    html += `<div class="leaderboard-item"><span>${index+1}. ${p.nick}</span><span>${p.elo} ELO</span></div>`;
+                });
+                list.innerHTML = html;
+            }
+        });
+        document.getElementById('close-modal').addEventListener('click', () => modal.style.display = 'none');
+
+
+        // ==========================================
+        // ИГРОВОЙ ДВИЖОК (Canvas, Touch, Physics)
+        // ==========================================
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        let gameLoopId;
+        let isPlaying = false;
+        
+        let width, height;
+        
+        // Сущности
+        const puck = { x: 0, y: 0, vx: 0, vy: 0, radius: 20, speedLimit: 15 };
+        const player = { x: 0, y: 0, radius: 40, mass: 2 };
+        const ai = { x: 0, y: 0, radius: 40, mass: 2 };
+        let scores = { player: 0, ai: 0 };
+        const winScore = 5;
+
+        // Эффекты от способностей
+        let effectTimer = 0;
+        let aiFrozen = false;
+        let puckSticky = false;
+
+        function resize() {
+            canvas.width = document.getElementById('game-screen').clientWidth;
+            canvas.height = document.getElementById('game-screen').clientHeight;
+            width = canvas.width;
+            height = canvas.height;
+            resetGame(true);
+        }
+        window.addEventListener('resize', resize);
+
+        function resetGame(full = false) {
+            puck.x = width / 2; puck.y = height / 2;
+            puck.vx = 0; puck.vy = 0;
+            player.x = width / 2; player.y = height - 100;
+            ai.x = width / 2; ai.y = 100;
+            if (full) { scores.player = 0; scores.ai = 0; updateScoreUI(); }
+        }
+
+        function updateScoreUI() {
+            document.getElementById('score-player').innerText = scores.player;
+            document.getElementById('score-ai').innerText = scores.ai;
+        }
+
+        // Управление (Touch API - ограничено своей половиной)
+        canvas.addEventListener('touchstart', handleTouch, {passive: false});
+        canvas.addEventListener('touchmove', handleTouch, {passive: false});
+        
+        function handleTouch(e) {
+            e.preventDefault();
+            if (!isPlaying) return;
+            const touch = e.touches[0];
+            const rect = canvas.getBoundingClientRect();
+            let tx = touch.clientX - rect.left;
+            let ty = touch.clientY - rect.top;
+
+            // Ограничения для биты игрока (нижняя половина поля + границы)
+            player.x = Math.max(player.radius, Math.min(width - player.radius, tx));
+            player.y = Math.max(height/2 + player.radius, Math.min(height - player.radius, ty));
+        }
+
+        // Физика столкновений (Круги)
+        function checkCollision(p1, p2) {
+            let dx = p1.x - p2.x;
+            let dy = p1.y - p2.y;
+            let dist = Math.sqrt(dx*dx + dy*dy);
+            if (dist < p1.radius + p2.radius) {
+                // Нормализация вектора
+                let nx = dx / dist; let ny = dy / dist;
+                // Простейшая физика отскока (Упругое столкновение)
+                let p = 2 * (p1.vx * nx + p1.vy * ny - (p2.vx||0)*nx - (p2.vy||0)*ny) / (p1.mass + (p2.mass||1));
+                
+                p1.vx = p1.vx - p * (p2.mass||1) * nx;
+                p1.vy = p1.vy - p * (p2.mass||1) * ny;
+                
+                // Расталкивание, чтобы не застревали
+                let overlap = 0.5 * (p1.radius + p2.radius - dist + 1);
+                p1.x += overlap * nx; p1.y += overlap * ny;
+            }
+        }
+
+        // Способность
+        document.getElementById('ability-btn').addEventListener('click', () => {
+            // Заготовка под выбранного кота (в примере - Коржик / Горчица)
+            if (currentUser.cat === "Коржик") {
+                // ИИ "скользит" (для примера просто заморозим его реакцию на время)
+                aiFrozen = true;
+                effectTimer = 48; // ~0.8 сек при 60 fps
+            }
+        });
+
+        // Игровой цикл
+        function update() {
+            if (!isPlaying) return;
+
+            // Движение шайбы
+            puck.x += puck.vx;
+            puck.y += puck.vy;
+
+            // Трение
+            puck.vx *= puckSticky ? 0.90 : 0.99;
+            puck.vy *= puckSticky ? 0.90 : 0.99;
+
+            // Отскок от стен
+            if (puck.x - puck.radius < 0) { puck.x = puck.radius; puck.vx *= -1; }
+            if (puck.x + puck.radius > width) { puck.x = width - puck.radius; puck.vx *= -1; }
+
+            // Ворота (условные, ширина 30% от экрана по центру)
+            const goalWidth = width * 0.3;
+            const goalLeft = (width - goalWidth) / 2;
+            const goalRight = goalLeft + goalWidth;
+
+            // Отскок от верха/низа или ГОЛ
+            if (puck.y - puck.radius < 0) {
+                if (puck.x > goalLeft && puck.x < goalRight) {
+                    scores.player++; updateScoreUI(); checkWin(); resetGame();
+                } else { puck.y = puck.radius; puck.vy *= -1; }
+            }
+            if (puck.y + puck.radius > height) {
+                if (puck.x > goalLeft && puck.x < goalRight) {
+                    scores.ai++; updateScoreUI(); checkWin(); resetGame();
+                } else { puck.y = height - puck.radius; puck.vy *= -1; }
+            }
+
+            // ИИ (слабый для тренировки)
+            if (!aiFrozen) {
+                let targetX = puck.y < height / 2 ? puck.x : width / 2;
+                ai.x += (targetX - ai.x) * 0.05; // Медленно следует
+                ai.y = Math.max(ai.radius, Math.min(height/2 - ai.radius, ai.y)); // Ограничение верхней половины
+            } else {
+                effectTimer--;
+                if (effectTimer <= 0) aiFrozen = false;
+            }
+
+            // Столкновения шайбы с битами
+            puck.mass = 1; // У шайбы масса меньше
+            checkCollision(puck, player);
+            checkCollision(puck, ai);
+
+            // Отрисовка
+            ctx.clearRect(0, 0, width, height);
+
+            // Поле (центральная линия и ворота)
+            ctx.strokeStyle = "rgba(255,255,255,0.2)";
+            ctx.lineWidth = 5;
+            ctx.beginPath(); ctx.moveTo(0, height/2); ctx.lineTo(width, height/2); ctx.stroke();
+            ctx.fillStyle = "rgba(255,0,0,0.3)"; ctx.fillRect(goalLeft, 0, goalWidth, 20); // Ворота ИИ
+            ctx.fillStyle = "rgba(0,0,255,0.3)"; ctx.fillRect(goalLeft, height-20, goalWidth, 20); // Ворота игрока
+
+            // Шайба
+            ctx.beginPath(); ctx.arc(puck.x, puck.y, puck.radius, 0, Math.PI*2);
+            ctx.fillStyle = "#fff"; ctx.fill(); ctx.closePath();
+
+            // Игрок
+            ctx.beginPath(); ctx.arc(player.x, player.y, player.radius, 0, Math.PI*2);
+            ctx.fillStyle = "#00d2ff"; ctx.fill(); ctx.closePath();
+
+            // ИИ
+            ctx.beginPath(); ctx.arc(ai.x, ai.y, ai.radius, 0, Math.PI*2);
+            ctx.fillStyle = "#e94560"; ctx.fill(); ctx.closePath();
+
+            gameLoopId = requestAnimationFrame(update);
+        }
+
+        function checkWin() {
+            if (scores.player >= winScore || scores.ai >= winScore) {
+                isPlaying = false;
+                alert(scores.player >= winScore ? "Ты победил!" : "Ты проиграл!");
+                // applyMatchResult(scores.player >= winScore, false); // Для тренировки отключено
+                switchScreen('menu');
+            }
+        }
+
+        // Запуск режима Тренировка
+        document.getElementById('mode-training').addEventListener('click', () => {
+            switchScreen('game');
+            resize();
+            isPlaying = true;
+            update();
+        });
+
+        // Кнопка выхода в меню
+        document.getElementById('back-btn').addEventListener('click', () => {
+            isPlaying = false;
+            cancelAnimationFrame(gameLoopId);
+            switchScreen('menu');
+        });
+
+        // Проверка при загрузке страницы, есть ли кэш
+        window.onload = async () => {
+            let userId = localStorage.getItem('cc2_userid');
+            if (userId) {
+                const snapshot = await get(child(ref(db), `users/${userId}`));
+                if (snapshot.exists()) {
+                    currentUser = { id: userId, ...snapshot.val() };
+                    updateMenuUI();
+                    switchScreen('menu');
+                }
+            }
+        }
+    </script>
 </body>
 </html>
